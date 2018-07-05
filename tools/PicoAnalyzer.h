@@ -3,9 +3,7 @@
 
 #include "TObject.h"
 
-class TTree;
-class TBranch;
-class TLeaf;
+class TChain;
 class TClonesArray;
 class StPicoEvent;
 class TH1D;
@@ -17,98 +15,71 @@ class TFile;
 class StEpdGeom;
 class StBbcGeom;
 class TRandom3;
-
+class StPicoEpdHit; 
 
 class PicoAnalyzer : public TObject {
  public:
   PicoAnalyzer();
   ~PicoAnalyzer();
 
-  void SetPicoDst(TTree*);
+  void SetPicoDst(TChain*);
   short Init();
   short Make(int iEvent);
   short Finish();
 
  private:
 
-  void ReadLeaves();   // explictly reads the relevant leaves, from the StPicoEvent object
-
+  // internal methods
   int FindCent(int RefMult);   // utility class just giving centrality bin.  Copied directly from Isaac 1 May 2018
-
   double GetBbcPmtPhi(short PmtId);
-  int nEvents;
+  void ReadInSystems();    // reads a text file that idenfies the collision system for every run
+  short WhichSystem(int runId);
+  void NewRun(int runId);    // invoked when Make() detects that a new run has been loaded
+  void FillPhiWeightHistos(StPicoEpdHit* epdHit, double weight);     // fills the histograms used for (a later job's) phi weighting
 
+  // https://drupal.star.bnl.gov/STAR/blog/lisa/optimizing-ep1-resolution-au27au-ring-dependent-weights-eta-dependent-weights
+  double v1Weight(int CentId, double eta);
+
+  // useful objects kept by PicoAnalyzer
   StEpdGeom* mEpdGeom;
   StBbcGeom* mBbcGeom;
-
-  double mNmipQtB;  // ADC value of MIP peak on rings 6-16 (read out thru QT32Bs)
-  double mNmipQtC;  // ADC value of MIP peak on rings 1-5  (read out thru QT32Cs)
-
-  double mnMipThreshold;  // low-signal threshold, to cut out noise basically.
-
-  // the tree, branches and leaves
-  TTree* mPicoDst;
-  TBranch* mEpdBranch;
-  TBranch* mBbcBranch;
-  TBranch* mEventBranch;
-
-  // dealing directly with the TLeaf objects is the only way I can get access to the info in the StPicoEvent object
-  // a little clumsy but it has its "elegance," I suppose.  And it's pretty fast
-  TLeaf* mRefMultNegLeaf;
-  TLeaf* mRefMultPosLeaf;
-  TLeaf* mVxLeaf;
-  TLeaf* mVyLeaf;
-  TLeaf* mVzLeaf;
-  TLeaf* mRunIdLeaf;
-  TLeaf* mVzVpdLeaf;
+  TRandom3* mRan;
+  char mCollidingSystem[365][500];    // index1=day of year;  index2=run of day
+  int mRunId;                         // when this changes, refresh some information.
+  short mRunCollisionSystem;
 
   // the data objects
+  TChain*   mPicoDst;
   TClonesArray* mEpdHits;
   TClonesArray* mBbcHits;
-  int mRefMult;
-  double mPrimVertPos[3];         // primary vertex position (x,y,z)
-  int mRunId;
-  double mVzVpd;
+  TClonesArray* mTracks;
+  TClonesArray* mEventClonesArray;  // kind of hilarious that the StPicoEvent is stored as a one-element TClonesArray :-)
+
+  // parameters relevant to my analysis
+  double mNmipQtB;  // ADC value of MIP peak on rings 6-16 (read out thru QT32Bs)
+  double mNmipQtC;  // ADC value of MIP peak on rings 1-5  (read out thru QT32Cs)
+  double mnMipThreshold;  // low-signal threshold, to cut out noise basically.
 
 
+
+  //  static const int mNumberOfEpdSubEvents = 6;
+  //  double mEpdEtaBbounds[mNumberOfEpdSubEvents+1] = {2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0};
+  static const int mNumberOfEpdSubEvents = 3;
+  double mEpdEtaBbounds[mNumberOfEpdSubEvents+1] = {2.0, 3.0, 4.0, 5.0};
+  static const int mNumberOfTpcSubEvents = 16;
+
+  TProfile* mEastLongDecorProfile[mNumberOfEpdSubEvents][4];    // second index is order of event plane
+  TProfile* mWestLongDecorProfile[mNumberOfEpdSubEvents][4];
+
+
+  // ---------- Now, my histograms, ntuples, TFiles, etc.  All stuff particular to my analysis
   // 1D histograms
-  TH1D* mHisto1D[40];            // miscellaneous 1D histograms
   TH1D* mNmipDists[2][12][31];   // nMIP distributions for all tiles
-  TH1D* mRefMultHist[9];         // convenient to have refMult distributions for the 9 centrality bins
-
-  // 2D histograms
-  TH2D* mHisto2D[40];           // miscellaneous 2D histograms
-  TH2D* mEpdEwPsi[3][3];        // [order n-1][correction level].
-  TH2D* mBbcEwPsi[3][3];        // [order n-1][correction level].
-
-  TH2D* mEpdEwPsi_midCentral[3][3];        // [order n-1][correction level].  Just to focus on 10-40%, for example
-  TH2D* mBbcEwPsi_midCentral[3][3];        // [order n-1][correction level].  Just to focus on 10-40%, for example
-
-  TH2D* mWestXY[16];    // shows locations of EPD hits when ONLY one inner BBC tile fires on West side
-  TH2D* mEastXY[16];    // shows locations of EPD hits when ONLY one inner BBC tile fires on East side
-
-
-  // profiles
-  TProfile* mEpdAveCos[3][3];  // [order n-1][correction level].
-  TProfile* mBbcAveCos[3][3];  // [order n-1][correction level].
-
-  //  these are shift correction factors that we MAKE now
-  TProfile2D* mEpdShiftOutput_sin[2][3];    // [ew][order-1]
-  TProfile2D* mEpdShiftOutput_cos[2][3];    // [ew][order-1]
-  TProfile2D* mBbcShiftOutput_sin[2][3];    // [ew][order-1]
-  TProfile2D* mBbcShiftOutput_cos[2][3];    // [ew][order-1]
-
-  //  these are shift correction factors that we made before, and USE now
-  TProfile2D* mEpdShiftInput_sin[2][3];    // [ew][order-1]
-  TProfile2D* mEpdShiftInput_cos[2][3];    // [ew][order-1]
-  TProfile2D* mBbcShiftInput_sin[2][3];    // [ew][order-1]
-  TProfile2D* mBbcShiftInput_cos[2][3];    // [ew][order-1]
-
+  TH1D* mAdcDists[2][12][31];   // ADC distributions for all tiles
 
   // ntuples
   TNtuple* mQ1vectorNtuple;      // Q1 vectors ring-by-ring. For offline weight optimization
   TNtuple* mQ2vectorNtuple;      // Q2 vectors ring-by-ring. For offline weight optimization
-
 
   // TFiles (to store histograms and data)
   TFile* mHistoFile;
@@ -117,14 +88,8 @@ class PicoAnalyzer : public TObject {
   TFile* mCorrectionInputFile;
   TFile* mCorrectionOutputFile;
 
-  TRandom3* mRan;
-
-
-//  StPicoEvent* mPicoEvent;  // too bad, can't read this due to bloody StThreeVectorF
-
-
-
-
+  TFile* mTpcWeightFile;      // just holds eta-phi 2D histogram
+  TFile* mTpcWeightInputFile;
 };
 
 

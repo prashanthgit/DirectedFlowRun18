@@ -9,20 +9,21 @@
 
 #include "TFile.h"
 #include "TTree.h"
+#include "TChain.h"
 #include "TString.h"
 #include "tools/PicoAnalyzer.h"
 
 
+/*
 void AnalyzePico(int nRootFilesToProcess=1, std::string FileListName = "DataFile.list"){
 
-  //  string rootFileName;
   TString rootFileName;
   TTree* picoDst;
   PicoAnalyzer* anal = new PicoAnalyzer();
   anal->Init();
 
   std::ifstream ifs(FileListName,std::ifstream::in);
-  std::cout << "at here  "<<FileListName <<std::endl;
+  if (!ifs){std::cout << "File list " << FileListName << " does not exist!  I quit.\n ";  return;}
   for (int iFile=0; iFile<nRootFilesToProcess; iFile++){
     ifs >> rootFileName;
     if (!(ifs.good())) break;
@@ -42,14 +43,52 @@ void AnalyzePico(int nRootFilesToProcess=1, std::string FileListName = "DataFile
     delete inFile;
   }
   anal->Finish();
+}
+*/
+
+void AnalyzePico(int nRootFilesToProcess=1, std::string FileListName = "DataFile.list"){
+
+
+  std::cout<<" file name of list of files "<<FileListName<<std::endl;
+  std::ifstream ifs(FileListName,std::ifstream::in);
+  if (!ifs){std::cout << "File list " << FileListName << " does not exist!  I quit.\n ";  return;}
+
+
+  TChain* picoDst = new TChain("PicoDst");
+  PicoAnalyzer* anal = new PicoAnalyzer();
+  anal->Init();
+  TString rootFileName;
+
+  for (int iFile=0; iFile<nRootFilesToProcess; iFile++){
+    ifs >> rootFileName;
+    std::cout << iFile<<"\t"<<rootFileName<<std::endl;
+    if (!(ifs.good())) break;
+    picoDst->Add(rootFileName.Data());
+  }
+  anal->SetPicoDst(picoDst);              // this must be done for each new file.  that's why we don't use TChain
+  int NeventsToAnalyze = picoDst->GetEntries();
+  std::cout << "Preparing to analyze " << NeventsToAnalyze << " events...\n";
+  for (int ievent=0; ievent<picoDst->GetEntries(); ievent++){
+    if (ievent%1000==0) std::cout << "Processed " << ievent << " events - " << 100.0*(double)ievent/(double)NeventsToAnalyze << "% \n";
+    anal->Make(ievent);
+  }
+  anal->Finish();
   
 }
   
 
-int main(int nRootFilesToProcess=1, Char_t **FileListName = "DataFile.list")
+
+  
+
+int main(int argc, char** argv)
 {
-  AnalyzePico(nRootFilesToProcess, FileListName);
-  //AnalyzePico(1, "DataFile.list");
+  int nFilesToProcess=1;                 // default
+  if (argc>1) nFilesToProcess = atoi(argv[1]);
+
+  TString FileList = "DataFile.list";    // default
+  if (argc>2) FileList = argv[2];
+  //  AnalyzePico(1, "DataFile.list");
+  AnalyzePico(nFilesToProcess, FileList.Data());
 
   return EXIT_SUCCESS;
 }
